@@ -1,5 +1,5 @@
 import config
-# from interface.component import *
+
 from interface import searchInterface
 
 from pyglet import *
@@ -36,17 +36,25 @@ class Program:
         def on_key_press(*args):
             self.on_key_press(*args)
 
+        self.__draw_hooks = set()
+        self.__resize_hooks = set()
+        self.__keypress_hooks = set()
+
+    def add_draw_hook(self, func): self.__draw_hooks.add(func)
+    def remove_draw_hook(self, func): self.__draw_hooks.remove(func)
     def on_draw(self):
-        pass
+        self.window.clear()
+        for hook in self.__draw_hooks: hook()
 
+    def add_resize_hook(self, func): self.__resize_hooks.add(func)
+    def remove_resize_hook(self, func): self.__resize_hooks.remove(func)
     def on_resize(self, width, height):
-        pass
+        for hook in self.__resize_hooks: hook(width, height)
 
+    def add_keypress_hook(self, func): self.__keypress_hooks.add(func)
+    def remove_keypress_hook(self, func): self.__keypress_hooks.remove(func)
     def on_key_press(self, symbol, modifiers):
-        pass
-    
-    def update(self, dt):
-        pass
+        for hook in self.__keypress_hooks: hook(symbol, modifiers)
 
 if __name__ == "__main__":
     program = Program("E621 Browser")
