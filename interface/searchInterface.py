@@ -12,30 +12,56 @@ def init(program):
     label = text.Label('Search',
                         font_name='Verdana',
                         font_size=36,
-                        x=window.width//2, y=window.height*0.5,
+                        x=window.width//2, y=window.height*0.7,
                         anchor_x='center', anchor_y='center')
+    loadResources()
     @window.event
     def on_draw():
         draw()
     @window.event
     def on_resize(*args):
         resize(*args)
+    global layout
+    document = text.document.FormattedDocument("hello?")
+    layout = text.layout.IncrementalTextLayout(document, 120, 50)
+    document.align = "center"
+    layout.align = "center"
+    layout.x = (window.width - 120)/2
+    layout.y = window.height * 0.7 - 30 - 50
+    document.set_style(0, 9999999, dict(font_name="verdana", font_size=16, color=(255,255,255, 255)))
+    caret = text.caret.Caret(layout, color=(255,255,255))
+    window.push_handlers(caret)
 
 def loadResources():
     global hexImg
-    hexImg = image.load(config.RESOURCES + "stripe.png")
-
-def resize(width, height):
     global imageWall
     global imageWallSprites
     imageWall = graphics.Batch()
-    imageWallSprites = []
-    for y in range(ceil(height / hexImg.height)):
-        for x in range(ceil(width / hexImg.width)):
-            imageWallSprites.append(sprite.Sprite(hexImg, hexImg.width*x, hexImg.height*y, batch=imageWall))
+    imageWallSprites = dict()
+
+    hexImg = image.load(config.RESOURCES + "stripe.png")
+
+def resize(width, height):
+    global hexImg
+    global imageWall
+    global imageWallSprites
+    amountX = ceil(width / hexImg.width)
+    amountY = ceil(height / hexImg.height)
+    if amountX * amountY != len(imageWallSprites):
+        newSprites = dict()
+        for y in range(amountY):
+            for x in range(amountX):
+                if (x, y) in imageWallSprites:
+                    # newSprites[(x, y)] = imageWallSprites.pop((x, y))
+                    continue
+                imageWallSprites[(x, y)] = sprite.Sprite(hexImg, hexImg.width*x, hexImg.height*y, batch=imageWall)
+        # for key, icon in imageWallSprites.items():
+        #     icon.delete()
+        # imageWallSprites = newSprites
 
 def draw(*args):
     window.clear()
     imageWall.draw()
     label.draw()
+    layout.draw()
     
