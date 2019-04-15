@@ -1,5 +1,6 @@
 from pyglet import gl, graphics, media, text
 from math import sin, cos, pi, radians
+from interface.tools import *
 
 class Constraint:
     def getValue(self):
@@ -63,6 +64,17 @@ class Component:
         self.width = width
         self.height = height
 
+        def set_state():
+            gl.glPushMatrix()
+            gl.glTranslatef(self.x, self.y, 0)
+        
+        def unset_state():
+            gl.glPopMatrix()
+
+        self.group = graphics.Group()
+        self.group.set_state = set_state
+        self.group.unset_state = unset_state
+
     def draw(self):
         raise NotImplementedError()
     
@@ -110,21 +122,37 @@ class Component:
         assert type(height) in (int, float) and height >= 0 or issubclass(type(height), Constraint)
         self.__height = height
 
-class Rectangle(Component):
-    def __init__(self, x=0, y=0, width=0, height=0, color=(255, 255, 255)):
-        super(Rectangle, self).__init__(x, y, width, height)
-        self._color = (c / 255 for c in color)
 
-    def draw(self, batch):
-        gl.glColor3f(*self._color)
-        gl.glBegin(gl.GL_QUADS)
-        gl.glTranslatef(self.x, self.y, 0)
-        gl.glVertex2f(0)
-        gl.glVertex2f(self.width, 0)
-        gl.glVertex2f(self.width, self.height)
-        gl.glVertex2f(0, self.height)
+class Rectangle(Component):
+    def __init__(self, x, y, width, height, radius, r2=None, r3=None, r4=None, color=None):
+        assert radius != None and (len({r2,r3,r4}) == 1 or len({radius,r2,r3,r4}) == 1)
+        super(Rectangle, self).__init__(x, y, width, height)
+        self._vertices = self._getVertices()
+    
+    def _getVertices(self):
+        out = []
+        def arc(x, y, radius, start, length):
+            out = []
+            steps = int(2 * pi * radius)
+            for i in range(steps):
+                angle = radians(360 * (i / steps)) + start
+                if angle > length + start: break
+                out.append(self.x + x + sin(angle) * radius)
+                out.append(self.y + y + cos(angle) * radius)
+            if len(out) == 0:
+                out.extend([self.x+x, self.y+y])
+            return out
+        gl.glPushMatrix()
         gl.glTranslatef(-self.x, -self.y, 0)
-        gl.glEnd()
+        out.extend(arc(self.radii[3], self.radii[3]*-1 + self.height, self.radii[3], -pi/2, pi/2)) # upper left
+        out.extend(arc(self.radii[2]*-1 + self.width, self.radii[2]*-1 + self.height, self.radii[2], 0, pi/2)) # upper right 
+        out.extend(arc(self.radii[1]*-1 + self.width, self.radii[1], self.radii[1], pi/2, pi/2)) # lower right
+        out.extend(arc(self.radii[0], self.radii[0], self.radii[0], pi, pi/2)) # lower left
+        gl.glPopMatrix()
+        return out
+
+    def draw(self, batch, group=None):
+        batch.add(len(self._vertices)//2, gl.GL_POLYGON, group, ('v2f', self._vertices))
 
 class Polygon(Component):
     def __init__(self, vertices: list, colors=None, x=0, y=0):
@@ -156,55 +184,9 @@ class Polygon(Component):
         gl.glEnd()
         gl.glTranslatef(-self.x, -self.y, 0)
 
-class RoundRect(Component):
-    def __init__(self, x, y, width, height, radius, r2=None, r3=None, r4=None, color=None):
-        assert radius != None and (len({r2,r3,r4}) == 1 or len({radius,r2,r3,r4}) == 1)
-        super(RoundRect, self).__init__(x, y, width, height)
-        if r2 == None:
-            self.radii = (radius, radius, radius, radius)
-        else:
-            self.radii = (radius, r2, r3, r4)
-        self._vertices = self._getVertices()
-    
-    def _getVertices(self):
-        out = []
-        def arc(x, y, radius, start, length):
-            out = []
-            steps = int(2 * pi * radius)
-            for i in range(steps):
-                angle = radians(360 * (i / steps)) + start
-                if angle > length + start: break
-                out.append(self.x + x + sin(angle) * radius)
-                out.append(self.y + y + cos(angle) * radius)
-            if len(out) == 0:
-                out.extend([self.x+x, self.y+y])
-            return out
-        out.extend(arc(self.radii[3], self.radii[3]*-1 + self.height, self.radii[3], -pi/2, pi/2)) # upper left
-        out.extend(arc(self.radii[2]*-1 + self.width, self.radii[2]*-1 + self.height, self.radii[2], 0, pi/2)) # upper right 
-        out.extend(arc(self.radii[1]*-1 + self.width, self.radii[1], self.radii[1], pi/2, pi/2)) # lower right
-        out.extend(arc(self.radii[0], self.radii[0], self.radii[0], pi, pi/2)) # lower left
-        return out
-
-    def draw(self, batch: graphics.Batch = None):
-        graphics.draw(len(self._vertices)//2, gl.GL_POLYGON,
-            ('v2f', self._vertices)
-        )
-        if batch:
-            batch.add(len(self._vertices)//2, gl.GL_POLYGON, None,
-                ('v2f', self._vertices)
-            )
-        # graphics.draw(2, gl.GL_LINES,
-        #     ('v2f', (self.x+5+self.width, self.y, self.x+5+self.width, self.y+self.height)),
-        #     ('c3B', (255,255,0, 255,0,0))
-        # )
-        # graphics.draw(2, gl.GL_LINES,
-        #     ('v2f', (self.x, self.y-5, self.x+self.width, self.y-5)),
-        #     ('c3B', (255,255,0, 255,0,0))
-        # )
-
-class TextBox(RoundRect):
+class TextBox(Component):
     def __init__(self, x, y, width, height, radius=0, **kwargs):
-        super(TextBox, self).__init__(x, y, width, height, radius)
+        super(TextBox, self).__init__(x, y, width, height)
         _text = kwargs.get("text", "")
 
         self.document = text.document.FormattedDocument(kwargs.get("text", ''))
@@ -215,22 +197,20 @@ class TextBox(RoundRect):
             italic=kwargs.get("italic", False),
             color=kwargs.get("color", (0,0,0,255))
         ))
-        self.layout = text.layout.IncrementalTextLayout(self.document, width, height)
+        def set_state():
+            self.layout.x, self.layout.y = (self.x, self.y)
+            gl.glPushMatrix()
+            gl.glTranslatef(self.x, self.y, 0)
+        self.group.set_state = set_state
+        self.layout = text.layout.IncrementalTextLayout(self.document, width, height, batch=kwargs.get("batch"))
         self.layout.content_valign = "center"
         
-        self.caret = text.caret.Caret(self.layout, color=kwargs.get("caret_color", (0,0,0)))
-    
-        self.layout.x = self.x
-        self.layout.y = self.y
-    
-    def update(self):
-        self.layout.x = self.x
-        self.layout.y = self.y
-        self._vertices = self._getVertices()
+        self.caret = text.caret.Caret(self.layout, color=kwargs.get("caret_color", kwargs.get("color", (0,0,0))[:3]))
+
+        self.shape = createRoundRect(0, 0, width, height, radius, batch=kwargs.get("batch"), group=self.group)
     
     def draw(self, *args):
-        super(TextBox, self).draw(*args)
-        # self.layout.draw()
+        self.shape.draw(gl.GL_POLYGON)
 
     def push_handlers(self, window):
         window.push_handlers(self.caret)
