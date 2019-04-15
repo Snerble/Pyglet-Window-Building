@@ -1,10 +1,16 @@
-from pyglet import gl
+from pyglet import gl, graphics, media, text
+from math import sin, cos, pi, radians
 
 class Constraint:
     def getValue(self):
         raise NotImplementedError()
     def setValue(self, value):
         raise NotImplementedError()
+    
+    def __int__(self):
+        return self.getValue()
+    def __float__(self):
+        return self.getValue()
 
 class AbsoluteConstraint(Constraint):
     def __init__(self, value : (int, float)):
@@ -74,9 +80,7 @@ class Component:
 
     @property
     def x(self):
-        if issubclass(type(self.__x), Constraint):
-            return self.__x.getValue()
-        return self.__x
+        return int(self.__x) if type(self.__x) == int else float(self.__x)
     @x.setter
     def x(self, x):
         assert type(x) in (int, float) or issubclass(type(x), Constraint)
@@ -84,9 +88,7 @@ class Component:
 
     @property
     def y(self):
-        if issubclass(type(self.__y), Constraint):
-            return self.__y.getValue()
-        return self.__y
+        return int(self.__y) if type(self.__y) == int else float(self.__y)
     @y.setter
     def y(self, y):
         assert type(y) in (int, float) or issubclass(type(y), Constraint)
@@ -94,9 +96,7 @@ class Component:
     
     @property
     def width(self):
-        if issubclass(type(self.__width), Constraint):
-            return self.__width.getValue()
-        return self.__width
+        return int(self.__width) if type(self.__width) == int else float(self.__width)
     @width.setter
     def width(self, width):
         assert type(width) in (int, float) and width >= 0 or issubclass(type(width), Constraint)
@@ -104,9 +104,7 @@ class Component:
         
     @property
     def height(self):
-        if issubclass(type(self.__height), Constraint):
-            return self.__height.getValue()
-        return self.__height
+        return int(self.__height) if type(self.__height) == int else float(self.__height)
     @height.setter
     def height(self, height):
         assert type(height) in (int, float) and height >= 0 or issubclass(type(height), Constraint)
@@ -157,3 +155,82 @@ class Polygon(Component):
             i+=1
         gl.glEnd()
         gl.glTranslatef(-self.x, -self.y, 0)
+
+class RoundRect(Component):
+    def __init__(self, x, y, width, height, radius, r2=None, r3=None, r4=None, color=None):
+        assert radius != None and (len({r2,r3,r4}) == 1 or len({radius,r2,r3,r4}) == 1)
+        super(RoundRect, self).__init__(x, y, width, height)
+        if r2 == None:
+            self.radii = (radius, radius, radius, radius)
+        else:
+            self.radii = (radius, r2, r3, r4)
+        self._vertices = self._getVertices()
+    
+    def _getVertices(self):
+        out = []
+        def arc(x, y, radius, start, length):
+            out = []
+            steps = int(2 * pi * radius)
+            for i in range(steps):
+                angle = radians(360 * (i / steps)) + start
+                if angle > length + start: break
+                out.append(self.x + x + sin(angle) * radius)
+                out.append(self.y + y + cos(angle) * radius)
+            if len(out) == 0:
+                out.extend([self.x+x, self.y+y])
+            return out
+        out.extend(arc(self.radii[3], self.radii[3]*-1 + self.height, self.radii[3], -pi/2, pi/2)) # upper left
+        out.extend(arc(self.radii[2]*-1 + self.width, self.radii[2]*-1 + self.height, self.radii[2], 0, pi/2)) # upper right 
+        out.extend(arc(self.radii[1]*-1 + self.width, self.radii[1], self.radii[1], pi/2, pi/2)) # lower right
+        out.extend(arc(self.radii[0], self.radii[0], self.radii[0], pi, pi/2)) # lower left
+        return out
+
+    def draw(self, batch: graphics.Batch = None):
+        graphics.draw(len(self._vertices)//2, gl.GL_POLYGON,
+            ('v2f', self._vertices)
+        )
+        if batch:
+            batch.add(len(self._vertices)//2, gl.GL_POLYGON, None,
+                ('v2f', self._vertices)
+            )
+        # graphics.draw(2, gl.GL_LINES,
+        #     ('v2f', (self.x+5+self.width, self.y, self.x+5+self.width, self.y+self.height)),
+        #     ('c3B', (255,255,0, 255,0,0))
+        # )
+        # graphics.draw(2, gl.GL_LINES,
+        #     ('v2f', (self.x, self.y-5, self.x+self.width, self.y-5)),
+        #     ('c3B', (255,255,0, 255,0,0))
+        # )
+
+class TextBox(RoundRect):
+    def __init__(self, x, y, width, height, radius=0, **kwargs):
+        super(TextBox, self).__init__(x, y, width, height, radius)
+        _text = kwargs.get("text", "")
+
+        self.document = text.document.FormattedDocument(kwargs.get("text", ''))
+        self.document.set_style(0, len(self.document.text), dict(
+            font_name=kwargs.get("font_name", "Sans-Serif"),
+            font_size=kwargs.get("font_size", 16),
+            bold=kwargs.get("bold", False),
+            italic=kwargs.get("italic", False),
+            color=kwargs.get("color", (0,0,0,255))
+        ))
+        self.layout = text.layout.IncrementalTextLayout(self.document, width, height)
+        self.layout.content_valign = "center"
+        
+        self.caret = text.caret.Caret(self.layout, color=kwargs.get("caret_color", (0,0,0)))
+    
+        self.layout.x = self.x
+        self.layout.y = self.y
+    
+    def update(self):
+        self.layout.x = self.x
+        self.layout.y = self.y
+        self._vertices = self._getVertices()
+    
+    def draw(self, *args):
+        super(TextBox, self).draw(*args)
+        # self.layout.draw()
+
+    def push_handlers(self, window):
+        window.push_handlers(self.caret)
