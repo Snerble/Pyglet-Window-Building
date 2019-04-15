@@ -1,7 +1,8 @@
 from pyglet import gl, graphics, text, clock, image, sprite
-# from main import Program
 from math import ceil, sin, cos
+from interface.component import TextBox, RelativeConstraint as Limit
 import config
+import threading
 
 def init(program):
     global window
@@ -21,16 +22,30 @@ def init(program):
     @window.event
     def on_resize(*args):
         resize(*args)
-    global layout
-    document = text.document.FormattedDocument("hello?")
-    layout = text.layout.IncrementalTextLayout(document, 120, 50)
-    document.align = "center"
-    layout.align = "center"
-    layout.x = (window.width - 120)/2
-    layout.y = window.height * 0.7 - 30 - 50
-    document.set_style(0, 9999999, dict(font_name="verdana", font_size=16, color=(255,255,255, 255)))
-    caret = text.caret.Caret(layout, color=(255,255,255))
-    window.push_handlers(caret)
+
+    global textbox
+    textbox = TextBox(
+        Limit(lambda: window.width/2-100),
+        Limit(lambda: window.height/2-12.5),
+        200, 50, 3,
+        text="Hello?",
+        color=(255,0,0,255),
+        italic=True,
+        bold=True
+    )
+    # textbox.draw(imageWall)
+    textbox.push_handlers(window)
+
+    global drawEvent
+    drawEvent = threading.Event()
+    def drawTextBox():
+        while True:
+            input("Enter anything to draw a new textbox...")
+            drawEvent.set()
+    thread = threading.Thread(target=drawTextBox, name="TextBoxDrawer")
+    thread.start()
+
+    clock.schedule_interval(update, 1/60)
 
 def loadResources():
     global hexImg
@@ -48,7 +63,7 @@ def resize(width, height):
     amountX = ceil(width / hexImg.width)
     amountY = ceil(height / hexImg.height)
     if amountX * amountY != len(imageWallSprites):
-        newSprites = dict()
+        # newSprites = dict()
         for y in range(amountY):
             for x in range(amountX):
                 if (x, y) in imageWallSprites:
@@ -59,9 +74,29 @@ def resize(width, height):
         #     icon.delete()
         # imageWallSprites = newSprites
 
+def update(dt):
+    if drawEvent.isSet():
+        textbox.update()
+        textbox.draw(imageWall)
+        drawEvent.clear()
+    # draw()
+    pass
+
 def draw(*args):
+    gl.glPushMatrix()
     window.clear()
-    imageWall.draw()
-    label.draw()
-    layout.draw()
+
+    imageWall.draw() # draw hex background
+    # textbox.draw() # draw box
+
+    # vertices = textbox._vertices
+    # gl.glBegin(gl.GL_POLYGON)
+    # for vertex in zip(vertices[::2], vertices[1::2]):
+    #     gl.glVertex2f(*vertex)
+    # gl.glEnd()
+
+    textbox.layout.draw() # draw text field
+    label.draw() # draw 'search' text label
+
+    gl.glPopMatrix()
     
