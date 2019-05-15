@@ -1,6 +1,7 @@
-from pyglet import gl, graphics, media, text
+from pyglet import gl, graphics, media, text, sprite
 from math import sin, cos, pi, radians
-from interface.tools import *
+from tools import runAsNewThread
+from interface.gltools import *
 
 class Constraint:
     def getValue(self):
@@ -9,9 +10,9 @@ class Constraint:
         raise NotImplementedError()
     
     def __int__(self):
-        return self.getValue()
+        return int(self.getValue())
     def __float__(self):
-        return self.getValue()
+        return float(self.getValue())
 
 class AbsoluteConstraint(Constraint):
     def __init__(self, value : (int, float)):
@@ -58,7 +59,7 @@ class RelativeConstraint(Constraint):
         return RelativeConstraint(lambda : component.y + component.height, offset)
 
 class Component:
-    def __init__(self, x=0, y=0, width=0, height=0):
+    def __init__(self, x=0, y=0, width=0, height=0, **kwargs):
         self.x = x
         self.y = y
         self.width = width
@@ -71,16 +72,24 @@ class Component:
         def unset_state():
             gl.glPopMatrix()
 
-        self.group = graphics.Group()
-        self.group.set_state = set_state
-        self.group.unset_state = unset_state
+        self._group = graphics.Group(kwargs.get("group"))
+        self._group.set_state = set_state
+        self._group.unset_state = unset_state
+        self.background = graphics.OrderedGroup(0, self._group)
+        self.foreground = graphics.OrderedGroup(1, self._group)
 
     def draw(self):
+        raise NotImplementedError()
+
+    def update(self, *args, **kwargs):
         raise NotImplementedError()
     
     def __call__(self, *args, **kwargs):
         self.draw()
         return 0
+
+    def set_handlers(self, window):
+        raise NotImplementedError()
 
     def setPosition(self, x, y):
         self.x = x
@@ -122,37 +131,8 @@ class Component:
         assert type(height) in (int, float) and height >= 0 or issubclass(type(height), Constraint)
         self.__height = height
 
-
-class Rectangle(Component):
-    def __init__(self, x, y, width, height, radius, r2=None, r3=None, r4=None, color=None):
-        assert radius != None and (len({r2,r3,r4}) == 1 or len({radius,r2,r3,r4}) == 1)
-        super(Rectangle, self).__init__(x, y, width, height)
-        self._vertices = self._getVertices()
-    
-    def _getVertices(self):
-        out = []
-        def arc(x, y, radius, start, length):
-            out = []
-            steps = int(2 * pi * radius)
-            for i in range(steps):
-                angle = radians(360 * (i / steps)) + start
-                if angle > length + start: break
-                out.append(self.x + x + sin(angle) * radius)
-                out.append(self.y + y + cos(angle) * radius)
-            if len(out) == 0:
-                out.extend([self.x+x, self.y+y])
-            return out
-        gl.glPushMatrix()
-        gl.glTranslatef(-self.x, -self.y, 0)
-        out.extend(arc(self.radii[3], self.radii[3]*-1 + self.height, self.radii[3], -pi/2, pi/2)) # upper left
-        out.extend(arc(self.radii[2]*-1 + self.width, self.radii[2]*-1 + self.height, self.radii[2], 0, pi/2)) # upper right 
-        out.extend(arc(self.radii[1]*-1 + self.width, self.radii[1], self.radii[1], pi/2, pi/2)) # lower right
-        out.extend(arc(self.radii[0], self.radii[0], self.radii[0], pi, pi/2)) # lower left
-        gl.glPopMatrix()
-        return out
-
-    def draw(self, batch, group=None):
-        batch.add(len(self._vertices)//2, gl.GL_POLYGON, group, ('v2f', self._vertices))
+    def contains(self, x, y):
+        return x >= self.x and x < self.x + self.width and y >= self.y and y < self.y + self.width
 
 class Polygon(Component):
     def __init__(self, vertices: list, colors=None, x=0, y=0):
@@ -187,30 +167,119 @@ class Polygon(Component):
 class TextBox(Component):
     def __init__(self, x, y, width, height, radius=0, **kwargs):
         super(TextBox, self).__init__(x, y, width, height)
-        _text = kwargs.get("text", "")
-
-        self.document = text.document.FormattedDocument(kwargs.get("text", ''))
-        self.document.set_style(0, len(self.document.text), dict(
-            font_name=kwargs.get("font_name", "Sans-Serif"),
-            font_size=kwargs.get("font_size", 16),
-            bold=kwargs.get("bold", False),
-            italic=kwargs.get("italic", False),
-            color=kwargs.get("color", (0,0,0,255))
-        ))
-        def set_state():
-            self.layout.x, self.layout.y = (self.x, self.y)
-            gl.glPushMatrix()
-            gl.glTranslatef(self.x, self.y, 0)
-        self.group.set_state = set_state
-        self.layout = text.layout.IncrementalTextLayout(self.document, width, height, batch=kwargs.get("batch"))
-        self.layout.content_valign = "center"
+        self.__batch = kwargs.get("batch")
+        self.__group = kwargs.get("group")
         
-        self.caret = text.caret.Caret(self.layout, color=kwargs.get("caret_color", kwargs.get("color", (0,0,0))[:3]))
+        if type(radius) in (int, float):
+            radius = (radius, radius, radius, radius)
+        self.radius = radius
+        
+        _text = kwargs.get("text", "")
+        self.color = kwargs.get("color", (255,255,255,255))
+        font_color = kwargs.get("font_color", (0,0,0,255))
+        font_name = kwargs.get("font_name", "Sans-Serif")
+        font_size = kwargs.get("font_size", 16)
+        italic = kwargs.get("italic", False)
+        bold = kwargs.get("bold", False)
+        self.padding = dict(
+            left=kwargs.get("padding_left", kwargs.get("padding", 0)),
+            right=kwargs.get("padding_right", kwargs.get("padding", 0)),
+            top=kwargs.get("padding_top", kwargs.get("padding", 0)),
+            bottom=kwargs.get("padding_bottom", kwargs.get("padding", 0))
+        )
+        placeholder = kwargs.get("placeholder", "")
 
-        self.shape = createRoundRect(0, 0, width, height, radius, batch=kwargs.get("batch"), group=self.group)
-    
-    def draw(self, *args):
-        self.shape.draw(gl.GL_POLYGON)
+        self.document = text.document.FormattedDocument(_text if len(_text) != 0 else " ")
+        self.document.set_style(0, max(1, len(self.document.text)), dict(
+            font_name=font_name,
+            font_size=font_size,
+            italic=italic,
+            bold=bold,
+            color=font_color
+        ))
+        self.document.text = _text
 
-    def push_handlers(self, window):
-        window.push_handlers(self.caret)
+        def set_state():
+            self.layout.x, self.layout.y = self.x + self.padding["left"], self.y + self.padding["top"]
+            self.layout.width, self.layout.height = self.width - self.padding["left"] - self.padding["right"], self.height - self.padding["top"] - self.padding["bottom"]
+            if (len(self.layout.document.text) != 0): self.placeholder.color = (0,0,0,0)
+            else: self.placeholder.color = (*(x + 85 * (1 if x < 128 else -1) for x in self.color[:3]), self.color[3])
+        self.foreground.set_state = set_state
+
+        self.layout = text.layout.IncrementalTextLayout(self.document, self.width, self.height, batch=self.__batch, wrap_lines=False)
+        self.layout.content_valign = "center"
+        self.caret = text.caret.Caret(self.layout, batch=self.__batch, color=font_color[:3])
+
+        self.placeholder = text.Label(placeholder if len(placeholder) != 0 else " ",
+                        font_name=font_name,
+                        font_size=font_size,
+                        italic=italic,
+                        bold=bold,
+                        x=self.padding["left"],
+                        y=self.padding["top"],
+                        width=self.width-self.padding["right"]-self.padding["left"],
+                        height=self.height-self.padding["bottom"]-self.padding["top"],
+                        anchor_y="bottom",
+                        batch=self.__batch,
+                        group=self.foreground)
+        self.placeholder.content_valign = "center"
+
+        def set_state1():
+            gl.glPushAttrib(gl.GL_CURRENT_BIT)
+            gl.glColor4f(*(x / 255 for x in self.color))
+        def unset_state1():
+            gl.glPopAttrib()
+        self.background.set_state, self.background.unset_state = set_state1, unset_state1
+
+        self.shape = createRoundRect(0, 0, self.width, self.height, self.radius, batch=self.__batch, group=self.background)
+        self.actions = list()
+
+    def activate(self):
+        for act in self.actions:
+            act(self.layout.document.text)
+
+    def on_text(self, text):
+        if text == '\r':
+            self.activate()
+            return
+        self.caret.on_text(text)
+
+    def set_handlers(self, window):
+        window.set_handlers(self.caret, on_text=self.on_text)
+
+class Button(Component):
+    def __init__(self, x, y, width, height, radius=0, **kwargs):
+        super(Button, self).__init__(x, y, width, height)
+        self.__batch = kwargs.get("batch")
+        self.__group = kwargs.get("group")
+
+        _text = kwargs.get("text")
+        self.tooltip = kwargs.get("tooltip")
+        self.color = kwargs.get("color", (255,255,255,255))
+        font_color = kwargs.get("font_color", (0,0,0,255))
+        font_name = kwargs.get("font_name", "Sans-Serif")
+        font_size = kwargs.get("font_size", 16)
+        italic = kwargs.get("italic", False)
+        bold = kwargs.get("blold", False)
+        image = kwargs.get("image")
+
+        if image:
+            self.media = sprite.Sprite()
+
+        self.text = text.Label(
+            text=_text,
+            font_name=font_name,
+            font_size=font_size,
+            color=font_color,
+            italic=italic,
+            bold=bold,
+            width=width,
+            height=height,
+            x=x,
+            y=y,
+            batch=self.__batch,
+            group=self.__group
+        )
+
+    def update(self):
+        pass
