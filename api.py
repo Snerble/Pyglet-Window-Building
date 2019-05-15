@@ -72,8 +72,8 @@ def request(url, params={}):
 
 @limit_rate(2)
 def search(limit, **kwargs):
-    print('Searching')
-    kwargs['limit'] = constrain(limit, 0, 500)
+    print('Searching', kwargs)
+    kwargs['limit'] = constrain(limit, 1, 500)
     url = config.BASE_URL + '/post/index.json'
     data = request(url, kwargs).json()
     for post_data in data:

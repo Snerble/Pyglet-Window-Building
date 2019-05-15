@@ -37,11 +37,6 @@ def download_post(config, post, tgt_dir):
         download_file(post.file_url, outfile)
 
 def download_file(url, tgt_fd):
-    from time import sleep
-    print('Fuck you bitch, download it yourself...')
-    sleep(5)
-    print('Well fuck, if you insist...')
-
     outfile = tgt_fd.buffer
 
     print('Requesting \''+url+'\'')
