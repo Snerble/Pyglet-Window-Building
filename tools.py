@@ -1,4 +1,5 @@
 import time
+import threading
 
 LIN = lambda x:x
 EXP = lambda x:x**2
@@ -38,6 +39,14 @@ def constrain(val, min, max):
     if val > max:
         return max
     return val
+
+def runAsNewThread(name=None):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            t = threading.Thread(target=func, name=name, args=args, kwargs=kwargs)
+            t.start()
+        return wrapper
+    return decorator
 
 def gauge(amount, length, **kwargs):
     fillchar = kwargs.get('fillchar', '-=≡■')
