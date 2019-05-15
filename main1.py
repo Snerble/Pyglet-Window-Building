@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import config
 import tools
 import api
@@ -253,6 +255,7 @@ def update(dt):
             if sprite != None:
                 sprite.delete()
             batch_sprites.remove(sprite)
+            del sprite
         while not post_image_queue.empty():
             post, image = post_image_queue.get_nowait()
             if not post in posts:
@@ -263,6 +266,9 @@ def update(dt):
                 batch_sprites[index].delete()
                 batch_sprites[index] = None
             batch_sprites[index] = pyglet.sprite.Sprite(img=image, batch=batch)
+            scale = min(1, window.width / batch_sprites[index].width)
+            scale *= min(1, window.height / (batch_sprites[index].height * scale))
+            batch_sprites[index].scale = scale
         index = 0
         for post in posts:
             postMsg = post.message
