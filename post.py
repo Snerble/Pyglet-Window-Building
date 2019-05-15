@@ -40,6 +40,9 @@ class Post:
 
     def load_preview(self, file_handler=lambda x:None):
         if self.preview_image == None:
+            if self.temp_preview and os.path.exists(self.temp_preview):
+                file_handler((self, self.temp_preview))
+                return self.preview_image
             if not self.loading_preview.is_set():
                 self.loading_preview.set()
                 clear_load_flag = lambda e: self.loading_preview.clear()
@@ -52,7 +55,7 @@ class Post:
                         fd, temp_preview = tempfile.mkstemp('_preview_e621dl.'+ext, str(self.id), tempfile.gettempdir() + config.TEMP_SUBD_DIR)
                         with open(temp_preview, 'wb') as outfile:
                             outfile.write(response.content)
-                        #self.print('Downloaded ' + str(self.id) + ' preview')
+                        self.print('Downloaded ' + str(self.id) + ' preview')
                         os.close(fd)
                         self.temp_preview = temp_preview
                     try:
@@ -67,6 +70,9 @@ class Post:
 
     def load_file(self, file_handler=lambda x:None):
         if self.file_image == None:
+            if self.temp_file and os.path.exists(self.temp_file):
+                file_handler((self, self.temp_file))
+                return self.file_image
             if not self.loading_file.is_set():
                 self.loading_file.set()
                 clear_load_flag = lambda e: self.loading_file.clear()
@@ -78,17 +84,17 @@ class Post:
                         fd, temp_file = tempfile.mkstemp('_e621dl.'+self.file_ext, str(self.id), tempfile.gettempdir() + config.TEMP_SUBD_DIR)
                         with open(temp_file, 'wb') as outfile:
                             outfile.write(response.content)
-                        #self.print('Downloaded ' + str(self.id))
+                        self.print('Downloaded ' + str(self.id))
                         os.close(fd)
                         self.temp_file = temp_file
                     try:
-                        file_handler((self, self.temp_file))
+                        file_handler((self, temp_file))
                         clear_load_flag(None)
                     except Exception as e:
                         self.print(e)
                 tools.rec_delay(self)
                 api.queue_request(self.file_url, response_handler=response_handler, error_handler=clear_load_flag)
-            return None
+            return self.file_image
         return self.file_image
 
     def clear_cache(self):
@@ -96,15 +102,19 @@ class Post:
         if not self.temp_preview == None:
             try:
                 os.remove(self.temp_preview)
-                self.temp_preview = None
             except: status = False
+        self.temp_preview = None
+
         if not self.temp_file == None:
             try:
                 os.remove(self.temp_file)
-            except Exception as e:
-                print(e)
-                status = False
+            except: status = False
         self.temp_file = None
+
+        if not self.preview_image == None:
+            del self.preview_image
+        self.preview_image = None
+
         if not self.file_image == None:
             del self.file_image
         self.file_image = None
@@ -112,13 +122,21 @@ class Post:
 
     def print(self, *args):
         if len(args) > 0:
-            s = args[0]
+            s = str(args[0])
             for e in args[1:]:
                 s += ' ' + str(e)
             if not self._message == None:
                 self._message += '\n' + s
             else:
                 self._message = s
+        if self._message != None:
+            print(self.message)
+
+    def __del__(self):
+        if not self.clear_cache():
+            print(f"Error while deleting Post@{hex(hash(self))[2:]}")
+        else:
+            print(f"Deleted Post@{hex(hash(self))[2:]}")
 
     def download(self, tgt_dir=config.DOWNLOADS):
         parser = download.load_parser()
