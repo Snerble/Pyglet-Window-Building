@@ -2,6 +2,8 @@ import api as E621
 import config
 import sys
 
+import pyglet_ffmpeg as ffmpeg
+
 from threading import Thread
 from queue import Queue
 from tools import runAsNewThread, format_data
@@ -10,7 +12,7 @@ from pyglet import gl, graphics, text, clock, image, sprite, media
 from pyglet.window import key
 from math import ceil, sin, cos
 
-from interface.component import TextBox, RelativeConstraint as Limit
+from components import TextBox, RelativeConstraint as Limit
 
 def init(program):
     global initializedHandlers
@@ -31,8 +33,7 @@ def init(program):
     backgroundBatch = graphics.Batch()
 
     loadResources()
-    window.push_handlers(on_resize=resize, on_draw=draw, on_key_press=on_key_press)
-    window.push_handlers(on_mouse_press=mouse_press)
+    attach()
 
     global textbox
     textbox = TextBox(
@@ -43,7 +44,9 @@ def init(program):
         padding_right=7.5,
         batch=foregroundBatch,
         placeholder="Search",
-        text="anthro equine female order:favcount type:png",
+        # text="anthro equine female order:favcount type:png",
+        text="ruaidri order:favcount female solo type:jpg",
+        # text="avian order:favcount female solo type:gif",
         group=foreground
     )
 
@@ -84,7 +87,7 @@ def init(program):
             print("Found no results, stopping...")
             window.set_mouse_cursor(default_cursor)
             return
-        if _post.file_ext in ("webm", "swf"):
+        if _post.file_ext in ("swf", "swf"):
             print(f"Found '{_post.file_ext}', stopping...")
             window.set_mouse_cursor(default_cursor)
             return
@@ -93,8 +96,13 @@ def init(program):
         def file_handler(arg):
             if arg[0].file_ext == "gif":
                 img = image.load_animation(arg[1])
+            elif arg[0].file_ext == "webm":
+                img = media.load(arg[1])
+                img = arg[1]
             else:
                 img = image.load(arg[1])
+                print('ugh')
+                print(type(img))
             arg[0].file_image = img
             imageQueue.put_nowait((arg[0], img))
             clock.schedule_once(update, 0)
@@ -108,7 +116,13 @@ def init(program):
     textbox.actions.append(activation_action)
     pagesetter.actions.append(activation_action)
 
+def attach():
+    window.push_handlers(on_resize=resize, on_draw=draw, on_key_press=on_key_press)
+    window.push_handlers(on_mouse_press=mouse_press)
+
 def on_key_press(button, modifiers):
+    if video != None:
+        return
     if button == key.LEFT:
         pagesetter.document.text = str(max(int(pagesetter.document.text)-1, 1))
         textbox.activate()
@@ -117,6 +131,8 @@ def on_key_press(button, modifiers):
         textbox.activate()
 
 def mouse_press(x, y, button, modifiers):
+    if video != None:
+        return
     window.pop_handlers()
     window.push_handlers()
     if (textbox.contains(x, y)):
@@ -147,23 +163,25 @@ def loadResources():
     global postGroup
     global postobject
     global animation
+    global video
     animation = None
     post = None
     postobject = None
     postGroup = graphics.Group(foreground)
+    video = None
 
     def set_state():
         global postx, posty, postscale
         padding = (window.height - textbox.y)*2 - textbox.height
 
-        if animation != None: post.scale = 1
+        post.scale = 1
+
         postscale =  min(post.width, window.width) / post.width
         postscale *= min(post.height * postscale, window.height - padding) / (post.height * postscale)
-
         postx, posty = (window.width - post.width * postscale)/2, (window.height - post.height * postscale - padding)/2
-        if animation != None:
-            post.x, post.y = postx, posty
-            post.scale = postscale
+
+        post.x, post.y = postx, posty
+        post.scale = postscale
 
     postGroup.set_state = set_state
 
@@ -186,30 +204,45 @@ def update(dt):
     global postobject
     global imageQueue
     global animation
+    global video
 
+    # delete old animation object
     if not animation == None:
-        del animation
         animation = None
-        # print(post._vertex_list.domain.allocator.get_fragmented_free_size())
         post.delete()
-        del post
-        post = None
-    if not post == None:
-        del post
-        post = None
-    if not postobject == None:
-        del postobject
-        postobject = None
-    del postobject
-    del post
+
+    # if not post == None:
+    #     del post
+    #     post = None
+    # if not postobject == None:
+    #     del postobject
+    #     postobject = None
+    # del postobject
+    # del post
     
     postobject, post = imageQueue.get()
+    print("WHAT")
+    print(type(post))
 
     if type(post) == image.Animation:
         animation = post
         post = sprite.Sprite(post, batch=foregroundBatch, group=postGroup)
-    else:
-        animation = post
+    elif type(post) == str or type(post) == media.StreamingSource or type(post) == media.Source or type(post) == media.codecs.ffmpeg.FFmpegSource:
+        from testing import test
+        test.init(window)
+        video = test.queue(post)
+        
+        def callback():
+            global video, post
+            print("Invoked callback")
+            video.delete()
+            video = None
+            post = None
+            animation = None
+            # attach()
+        
+        test.play(callback)
+    elif type(post) == image.ImageData:
         post = sprite.Sprite(post, batch=foregroundBatch, group=postGroup)
 
     postobject.print()
@@ -223,7 +256,9 @@ def update(dt):
     #     del img
 
 def draw(*args):
-    print("Drawing screen")
+    if video != None:
+        return
+
     gl.glPushMatrix()
     window.clear()
 
@@ -231,10 +266,11 @@ def draw(*args):
     backgroundBatch.draw()
     foregroundBatch.draw()
     
-    if animation == None and post != None:
-        postGroup.set_state()
-        post.blit(postx, posty, width=post.width * postscale, height=post.height * postscale)
-        postGroup.unset_state()
+    # if animation == None and post != None:
+    #     postGroup.set_state()
+    #     print(type(post))
+    #     post.blit(postx, posty, width=post.width * postscale, height=post.height * postscale)
+    #     postGroup.unset_state()
 
     gl.glPopMatrix()
     

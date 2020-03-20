@@ -5,6 +5,7 @@ import threading
 import requests
 import config
 import time
+import json
 
 download_threads = []
 download_queue = Queue()
@@ -35,6 +36,7 @@ def spawn_session():
     if len(download_threads) >= config.CONCURRENT_LIMIT:
         return
     session = requests.session()
+    session.stream = True
     process = threading.Thread(target=download_thread, name='Session-'+str(len(download_threads)+1), args=(session,))
     download_threads.append(process)
     process.start()
@@ -62,11 +64,15 @@ def queue_request(url, params={}, **kwargs):
     download_queue.put_nowait((url, params, response_handler, error_handler))
 
 def request(url, params={}):
+    print(">>> Getting response")
+    t = time.perf_counter()
     response = requests.get(
         url,
         params.items(),
-        headers = {'User-Agent': config.USER_AGENT}
+        headers = {'User-Agent': config.USER_AGENT},
+        stream=True
     )
+    print(">>> Received response (%s ms)" % round((time.perf_counter() - t) * 1000))
     response.raise_for_status()
     return response
 
@@ -76,5 +82,9 @@ def search(limit, **kwargs):
     kwargs['limit'] = constrain(limit, 1, 500)
     url = config.BASE_URL + '/post/index.json'
     data = request(url, kwargs).json()
+    # bypass response and load in saved response
+    # file = open("../new 3.json")
+    # data = json.load(file)
+    # file.close()
     for post_data in data:
         yield Post(post_data)

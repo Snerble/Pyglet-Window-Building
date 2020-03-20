@@ -7,6 +7,7 @@ import api
 import os
 import time
 import tools
+import sys
 
 class Post:
     def __init__(self, data):
@@ -78,12 +79,27 @@ class Post:
                 clear_load_flag = lambda e: self.loading_file.clear()
                 def response_handler(response):
                     if self.temp_file == None:
-                        size = len(response.content)
+                        fd, temp_file = tempfile.mkstemp('_e621dl.'+self.file_ext, str(self.id), tempfile.gettempdir() + config.TEMP_SUBD_DIR)
+                        strlen = 0
+                        progress = 0
+                        size = self.file_size
+                        with open(temp_file, 'wb') as outfile:
+                            # outfile.write(response.content)
+                            for data in response.iter_content(chunk_size=4096*4):
+                                if data:
+                                    outfile.write(data)
+                                    outfile.flush()
+                                    progress += len(data)
+                                    g = tools.gauge(progress / size, 20, format='\r    Downloading... [%s]')
+                                    s = g + ' ' + tools.format_data(progress, 2) + ' / ' + tools.format_data(size, 2)
+                                    s += ' ' * (strlen - len(s))
+                                    strlen = len(s)
+                                    sys.stdout.write(s)
+                                    sys.stdout.flush()
+                        # size = len(response.content)
+                        size = progress
                         delay = tools.get_delay(self)
                         self.print(tools.format_data(size, 2) + '  \t' + str(round(delay, 2)) + ' s    \t' + tools.format_data(size/delay, 2) + '/s')
-                        fd, temp_file = tempfile.mkstemp('_e621dl.'+self.file_ext, str(self.id), tempfile.gettempdir() + config.TEMP_SUBD_DIR)
-                        with open(temp_file, 'wb') as outfile:
-                            outfile.write(response.content)
                         self.print('Downloaded ' + str(self.id))
                         os.close(fd)
                         self.temp_file = temp_file

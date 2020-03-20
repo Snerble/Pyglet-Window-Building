@@ -1,5 +1,6 @@
 import time
 import threading
+import asyncio
 
 LIN = lambda x:x
 EXP = lambda x:x**2
@@ -18,12 +19,15 @@ def getTransition(id, default): return transitionCache[id] if id in transitionCa
 
 transitions = dict()
 def transition(id, duration, value, mod=LIN, stage=-1):
+    id = str(id)
     if ((stage >= 0 and (duration == 0 or not id in transitions or not transitions[id][2] == stage)) or
        (stage < 0 and (duration == 0 or not id in transitions or not transitions[id][1] == value))):
         transitions[id] = (time.perf_counter()*1000+duration, value, stage)
         nv = getTransition(id+'#MEM', value)
         cacheTransition(id,nv)
-        return nv
+        # return nv
+    if duration == 0:
+        return value
 
     v = transitions[id]
     x = constrain(time.perf_counter()*1000,0,v[0])
@@ -47,6 +51,13 @@ def runAsNewThread(name=None):
             t.start()
         return wrapper
     return decorator
+
+def fire_and_forget(func):
+    """Runs an async function on a new thread."""
+    assert asyncio.iscoroutinefunction(func)
+    def wrapper(*args, **kwargs):
+        threading.Thread(target=asyncio.run, args=(func(*args, **kwargs),)).start()
+    return wrapper
 
 def gauge(amount, length, **kwargs):
     fillchar = kwargs.get('fillchar', '-=≡■')

@@ -1,10 +1,13 @@
-#!/usr/bin/env python3
+import sys
+print(sys.executable)
+
+
 import config
 
 import os
 import tempfile
 
-from interface import searchInterface
+from interface import testEnv, searchInterface
 
 from pyglet import *
 from pyglet.gl import *
@@ -48,5 +51,6 @@ if __name__ == "__main__":
             print('Removed', f)
         except: pass
     program = Program("E621 Browser")
-    searchInterface.init(program)
+    testEnv.init(program)
+    # searchInterface.init(program)
     app.run()

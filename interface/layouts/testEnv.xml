@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<components.scrollLayout.ScrollLayout>
+    <components.image.Image
+        width="match_parent"
+        height="wrap_content"
+        max_height="match_parent"
+        image="%userprofile%/Google Drive/Wallpapers/Falvie - Feline.png"
+        fit_mode="fill"
+        align="right" />
+    <!-- <components.image.Image
+        width="match_parent"
+        height="wrap_content"
+        max_height="match_parent"
+        image="%userprofile%/Google Drive/Wallpapers/Hollow Knight - Mantis Lords.jpg" />
+    <components.image.Image
+        width="match_parent"
+        height="wrap_content"
+        max_height="match_parent"
+        image="%userprofile%/Google Drive/Wallpapers/Hollow Knight - Broken Vessel.jpg" />
+    <components.image.Image
+        width="match_parent"
+        height="wrap_content"
+        max_height="match_parent"
+        image="%userprofile%/Google Drive/Wallpapers/Hollow Knight - Grimm.png" /> -->
+</components.scrollLayout.ScrollLayout>

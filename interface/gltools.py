@@ -13,8 +13,8 @@ def rectangle(x, y, width, height):
     return [
         x, y,
         x + width, y,
-        x + width, y + width,
-        x, y + width
+        x + width, y + height,
+        x, y + height
     ]
 
 def arc(x, y, radius, start, length):
