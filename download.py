@@ -6,6 +6,7 @@ import sys
 import os
 
 if not os.path.exists(prgm_config.METADATA):
+    os.makedirs(os.path.dirname(prgm_config.METADATA))
     open(prgm_config.METADATA, 'a').close()
 
 def load_parser():
