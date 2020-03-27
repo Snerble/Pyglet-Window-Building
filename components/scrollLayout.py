@@ -1,6 +1,6 @@
 import pyglet
 import interface.xmlParser as xml
-from math import sin, pi, sqrt
+from math import sin, pi, sqrt, ceil
 from components import Component, RelativeConstraint, Constraint
 
 class ScrollLayout(Component):
@@ -10,7 +10,7 @@ class ScrollLayout(Component):
 
         super().__init__(parent, **kwargs)
 
-        self.__root_component = xml.parse("interface/layouts/scrollLayout.xml")
+        self.__root_component = xml.parse("interface/layouts/scrollLayout.xml", self)
         self.__root_component.parent = self
 
         # Initialize members
@@ -39,7 +39,7 @@ class ScrollLayout(Component):
         if value < 0:
             self.__scrolls.clear()
             value = 0
-        max_value = max(0, self.content_height - self.height)
+        max_value = max(0, self.content_height - self.max_content_height    )
         if value > max_value:
             self.__scrolls.clear()
             value = max_value
@@ -74,7 +74,7 @@ class ScrollLayout(Component):
 
     @property
     def stacking_factor(self) -> (int, float):
-        if self.__sc__scroll_stacking_factor == 0: return None
+        if self.__scroll_stacking_factor == 0: return None
         return 1 / self.__scroll_stacking_factor
     @stacking_factor.setter
     def stacking_factor(self, value: (int, float, str, None)):
@@ -93,7 +93,6 @@ class ScrollLayout(Component):
             assert value > 0, "Value may not be less than 0."
             self.__scroll_stacking_factor = 1 / value
         else: self.__scroll_stacking_factor = 0
-        print(value)
 
     @property
     def content_width(self) -> (int, float):
@@ -102,23 +101,12 @@ class ScrollLayout(Component):
     def content_height(self) -> (int, float):
         return sum(c.height for c in self.__root_component._children)
 
-    @Component.padding_right.getter
-    def padding_right(self):
-        if not self._invalidated and self._scrollbar_padding == None:
-            self._scrollbar_padding = 50 if self.height < self.content_height else 0
+    # @Component.padding_right.getter
+    # def padding_right(self):
+    #     if not self._invalidated and self._scrollbar_padding == None:
+    #         self._scrollbar_padding = 50 if self.height < self.content_height else 0
 
-        return Component.padding_right.fget(self) + (self._scrollbar_padding if self._scrollbar_padding else 0)
-
-    # @Component.max_content_width.getter
-    # def max_content_width(self) -> float:
-    #     if self._max_component_width == None:
-    #         self._max_component_width = Component.max_content_width.fget(self)
-            
-    #         # Early return for when this variable is being reset by invalidation
-    #         if self._invalidated: return
-
-    #         self._max_component_width -= 10 if self.height < self.content_height else 0
-    #     return self._max_component_width
+    #     return Component.padding_right.fget(self) + (self._scrollbar_padding if self._scrollbar_padding else 0)
 
     def add(self, component: Component):
         self.__root_component.add(component)
@@ -129,25 +117,20 @@ class ScrollLayout(Component):
     def remove(self, component: Component):
         self.__root_component._children.remove(component)
 
-    def set_handlers(self, parent: Component):
-        if parent == None:
-            return
-        if issubclass(type(parent), pyglet.window.Window):
-            parent.set_handler("on_mouse_scroll", self.on_mouse_scroll)
-        else:
-            self.set_handlers(parent.parent)
+    def set_handlers(self):
+        self.parent.window.set_handler("on_mouse_scroll", self.on_mouse_scroll)
 
     def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
         if not self.contains(x, y): return
 
         distance = scroll_y * -self.step_size
-        if not self.smooth_scroll:
+        if not self.smooth_scroll or abs(scroll_y) != 1: # TODO test if scroll_y is always one with a mouse
             self.scroll_position += distance
             return
 
         if len(self.__scrolls) == 0:
             pyglet.clock.tick()
-            pyglet.clock.schedule(self.update)
+            pyglet.clock.schedule_interval(self.update, 1/60)
         
         self.__scrolls.append([
             self.scroll_duration*2, # Lifetime variable in seconds
@@ -210,21 +193,13 @@ class ScrollLayout(Component):
         self.scroll_position = self.scroll_position
 
     def draw(self):
-        self.invalidate()
         self._group.set_state()
 
-        # # pyglet.gl.glTranslatef(0, self.scroll_position, 0)
-        # offset = -self.scroll_position
-        # for c in self.__root_component._children:
-        #     c.y = offset
-        #     offset -= c.height
-        #     # pyglet.gl.glTranslatef(0, -c.height, 0)
         offset = -self.scroll_position
         for c in self.__root_component._children:
-            c.y = offset
-            offset += c.height
+            c.y = ceil(offset)
+            offset += ceil(c.height)
         self.__root_component.draw()
         
-        self.__padding_right = 0
         self._group.unset_state()
     

@@ -26,19 +26,17 @@ class Layout(Component):
         Raises ValueError if the component is not present."""
         self._children.remove(component)
     
-    def __add__(self, value: (Component, Any)) -> 'Layout':
+    def __add__(self, value: Component) -> 'Layout':
         """Adds the component from this layout if the value is a Component object."""
         if issubclass(type(value), Component):
             self.add(value)
             return self
-        return super().__add__(value)
     
-    def __sub__(self, value: (Component, Any)) -> 'Layout':
+    def __sub__(self, value: Component) -> 'Layout':
         """Removes the component from this layout if the value is a Component object."""
         if issubclass(type(value), Component):
             self.add(value)
             return self
-        return super().__add__(value)
 
     def __contains__(self, value: Component) -> bool:
         """Returns whether the given component is present in this layout."""
@@ -49,6 +47,6 @@ class Layout(Component):
 
     def draw(self):
         self._group.set_state()
-        for c in self._children:
+        for c in (c for c in self._children if c.y + c.height >= 0 and c.y <= self.max_content_height):
             c.draw()
         self._group.unset_state()

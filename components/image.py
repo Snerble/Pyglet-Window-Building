@@ -1,10 +1,16 @@
-from components import Component, RelativeConstraint, Polygon
-from threading import Lock
-
-import os.path
-import pyglet
 import asyncio
+import io
+import os.path
+from threading import Lock, Thread
+from urllib.parse import urlparse
+
+import pyglet
+import requests
+
 import tools
+from components import Component, Polygon, RelativeConstraint
+
+import numpy as np
 
 class Image(Component):
     # Lock to prevent errors during async image loading
@@ -31,11 +37,14 @@ class Image(Component):
             align:          See Image.align.
             vertical_align: See Image.vertical_align
         """
-        super().__init__(parent, **kwargs)
 
         # Initialize members
+        self._sprite_invalidated = False
         self._sprite = None
         self.__image = None
+        
+        super().__init__(parent, **kwargs)
+
         self.__spriteGroup = ImageGroup(self, self._group)
         self.__file_path = None
 
@@ -43,24 +52,72 @@ class Image(Component):
         self.fit_mode = kwargs.get('fit_mode', 'fit')
         self.align = kwargs.get('align', 'center')
         self.vertical_align = kwargs.get('vertical_align', 'center')
-        self.async_image = kwargs.get("image")
-        self.async_image = kwargs.get("async_image")
+        self.image = kwargs.get("image")
+
+        self.set_value_watcher(self, self.invalidate, "max_content_width")
+        self.set_value_watcher(self, self.invalidate, "max_content_height")
+        # self.set_value_watcher(self, self.invalidate, "width")
+        # self.set_value_watcher(self, self.invalidate, "height")
 
     @Component.width.setter
     def width(self, value):
         if value == "wrap_content":
-            value = RelativeConstraint(
-                lambda : self._sprite.width if not self._sprite == None else 0
-            )
+            value = RelativeConstraint(lambda : self.content_width)
+            # Add watcher that clears the width if the content changes
+            self.set_value_watcher(self, "width", "content_width")
+        else:
+            # Add watcher that invalidates the image if the size changes
+            self.remove_value_watcher(self, "width", "content_width")
+
         Component.width.fset(self, value)
     
     @Component.height.setter
     def height(self, value):
         if value == "wrap_content":
-            value = RelativeConstraint(
-                lambda : self._sprite.height if not self._sprite == None else 0
-            )
+            value = RelativeConstraint(lambda : self.content_height)
+            # Add watcher that clears the height if the content changes
+            self.set_value_watcher(self, "height", "content_height")
+        else:
+            # Add watcher that invalidates the image if the size changes
+            self.remove_value_watcher(self, "height", "content_height")
+
         Component.height.fset(self, value)
+    
+    @Component.max_width.setter
+    def max_width(self, value):
+        if value == "wrap_content":
+            def getter():
+                return ((self.image.width
+                    if issubclass(type(self.image), pyglet.image.AbstractImage)
+                    else self.image.frames[0].image.width
+                    if self.image and not len(self.image.frames) == 0
+                    else 0) + self.padding_left + self.padding_right)
+            value = RelativeConstraint(getter)
+            # Add watcher that clears the max_width if the content changes
+            self.set_value_watcher(self, "max_width", "content_width")
+        else:
+            # Add watcher that invalidates the image if the size changes
+            self.remove_value_watcher(self, "max_width", "content_width")
+
+        Component.max_width.fset(self, value)
+    
+    @Component.max_height.setter
+    def max_height(self, value):
+        if value == "wrap_content":
+            def getter():
+                return ((self.image.height
+                    if issubclass(type(self.image), pyglet.image.AbstractImage)
+                    else self.image.frames[0].image.height
+                    if self.image and not len(self.image.frames) == 0
+                    else 0))# + self.padding_top + self.padding_bottom)
+            value = RelativeConstraint(getter)
+            # Add watcher that clears the max_height if the content changes
+            self.set_value_watcher(self, "max_height", "content_height")
+        else:
+            # Add watcher that invalidates the image if the size changes
+            self.remove_value_watcher(self, "max_height", "content_height")
+
+        Component.max_height.fset(self, value)
 
     @property
     def file_path(self):
@@ -89,17 +146,32 @@ class Image(Component):
 
         # Load the image
         if type(value) == str:
-            value = os.path.expandvars(value)
-            if os.path.splitext(value)[1].lower() == '.gif':
-                self.__image = pyglet.image.load_animation(value)
+            # Check if the value is a url
+            file = None
+            url = urlparse(value)
+            if url.scheme in ("http", "https"):
+                # Get byte stream from http response
+                response = requests.get(value, stream=True)
+                response.raise_for_status()
+                file = io.BytesIO(response.content)
             else:
-                self.__image = pyglet.image.load(value)
-            self.__file_path = os.path.abspath(value)
+                value = os.path.abspath(os.path.expandvars(value))
+            
+            # Load the image
+            self.__image = (pyglet.image.load_animation(value, file)
+                if os.path.splitext(value)[1].lower() == '.gif'
+                else pyglet.image.load(value, file))
+
+            # Remember the file path
+            self.__file_path = value
         else:
             self.__image = value
         
         # Create the new sprite
-        self._sprite = pyglet.sprite.Sprite(self.__image)
+        # self._sprite = pyglet.sprite.Sprite(self.__image)
+        self.invalidate()
+        del self.content_width
+        del self.content_height
         
     @property
     def fit_mode(self) -> str:
@@ -159,19 +231,31 @@ class Image(Component):
         # Load the image
         if type(value) == str:
             self.__image_lock.acquire()
-            value = os.path.expandvars(value)
-            if os.path.splitext(value)[1].lower() == '.gif':
-                image = pyglet.image.load_animation(value)
-            else:
-                image = pyglet.image.load(value)
-            self.__image_lock.release()
-            self.__file_path = os.path.abspath(value)
 
-        def setter():
-            self.image = image
-            self.draw()
-        # Run the setter on the main thread
-        pyglet.clock.schedule_once(lambda x : setter(), 0)
+            # Check if the value is a url
+            file = None
+            url = urlparse(value)
+            if url.scheme in ("http", "https"):
+                # Get byte stream from http response
+                response = requests.get(value, stream=True)
+                response.raise_for_status()
+                file = io.BytesIO(response.content)
+            else:
+                value = os.path.abspath(os.path.expandvars(value))
+                
+            self.__image = (pyglet.image.load_animation(value, file)
+                if os.path.splitext(value)[1].lower() == '.gif'
+                else pyglet.image.load(value, file))
+
+            # Remember the file path
+            self.__file_path = value
+            self.__image_lock.release()
+        else:
+            self.__image = value
+
+        self.invalidate()
+        del self.content_width
+        del self.content_height
 
     def delete(self):
         """Deletes the current sprite (If one is loaded)."""
@@ -179,24 +263,91 @@ class Image(Component):
         if not self._sprite == None:
             self._sprite.delete()
 
+    @property
+    def content_width(self) -> float:
+        return (self._sprite.width
+            if self._sprite
+            else self.image.width
+            if issubclass(type(self.image), pyglet.image.AbstractImage)
+            else self.image.frames[0].image.width
+            if self.image and not len(self.image.frames) == 0
+            else 0) + self.padding_left + self.padding_right
+    @content_width.deleter
+    def content_width(self):
+        pass
+    
+    @property
+    def content_height(self) -> float:
+        return (self._sprite.height
+            if self._sprite
+            else self.image.height
+            if issubclass(type(self.image), pyglet.image.AbstractImage)
+            else self.image.frames[0].image.height
+            if self.image and not len(self.image.frames) == 0
+            else 0) + self.padding_top + self.padding_bottom
+    @content_height.deleter
+    def content_height(self):
+        pass
+
     def invalidate(self):
-        if self._sprite == None: return
-        self.__spriteGroup.set_state()
+        self._sprite_invalidated = True
 
     def draw(self):
-        # TODO use set_state_recursive when the parent is still valid
-        # Basically, if this component is invalid, it will have to
-        # invoke the group hierarchy manually. If this component is
-        # redrawn by it's parent, it does not need to recursively
-        # set the state because it is already done by the parent.
-        # TODO Steal java's invalidate thingy
-        if self._sprite == None: return
-        self.invalidate()
+        if not self.visible or not self.image: return
+
+        if self._sprite_invalidated:
+            if not self._sprite:
+                self._sprite_invalidated = False
+                print("Loading sprite for", os.path.basename(self.file_path) if self.file_path else "N/A")
+                
+                def getTexture(dt):
+                    self._sprite = pyglet.sprite.Sprite(self.__image)
+                    self.__spriteGroup.set_state()
+                    self.invalidate()
+                    pyglet.clock.unschedule(getTexture)
+                
+                pyglet.clock.schedule_interval_soft(getTexture, 0)
+            else:
+                self.__spriteGroup.set_state()
+                self._sprite_invalidated = False
+        
+        if not self._sprite: return
+
         self._group.set_state()
 
-        self._sprite.draw()
+        pyglet.gl.glScalef(2, 1, 1)
+
+        a = (pyglet.gl.GLfloat * 16)()
+        pyglet.gl.glGetFloatv(pyglet.gl.GL_MODELVIEW_MATRIX, a)
+        b = list()
+        for i in range(0, 16, 4):
+            b.append(list(a[i:i+4]))
+
+        b = np.matrix(b)
+
+        coords = [5, 0, 0, 1]
+        v = np.dot(coords, b)
         
-        self.__spriteGroup.unset_state()
+        inv = np.linalg.inv(b)
+        inv = np.transpose(inv)
+        # b = np.transpose(b)   
+        print(f"Coords:        {{x:{self.x},y:{self.y}}}")
+        
+        # coords = np.matrix([0, 0, 0, 0])
+        print(b)
+
+        print(*v)
+        print(f"Actual Coords: {{x:{v[0]},y:{v[1]}}}")
+
+        _quad = ('v2f', (0, 0,
+                         0 + self.max_content_width, 0,
+                         0 + self.max_content_width, 0 + self.max_content_height,
+                         0, 0 + self.max_content_height))
+
+        self._sprite.draw()
+        # self._sprite.blit(0, 0, 0, self.width, self.height)
+        
+        # self.__spriteGroup.unset_state()
         self._group.unset_state()
 
 class ImageGroup(pyglet.graphics.Group):
@@ -205,11 +356,13 @@ class ImageGroup(pyglet.graphics.Group):
     def __init__(self, rootComponent, parent=None, **kwargs):
         """Initializes a new instance of ImageGroup."""
         super().__init__(parent)
-        self._root = rootComponent
+        self._root: Image = rootComponent
 
     def set_state(self):
         sprite = self._root._sprite
         sprite.update(0, 0, None, 1, 1, 1)
+        del self._root.content_width
+        del self._root.content_height
 
         # Apply fit scaling
         fit_mode = self._root.fit_mode
@@ -221,6 +374,8 @@ class ImageGroup(pyglet.graphics.Group):
         except ZeroDivisionError: return
 
         sprite.update(None, None, None, *scaling)
+        del self._root.content_width
+        del self._root.content_height
         
         # Apply horizontal align
         align = self._root.align
@@ -243,23 +398,23 @@ class ImageGroup(pyglet.graphics.Group):
         sprite = self._root._sprite
 
         # Calculate a scale that fits
-        scale = self._root.width / sprite.width
-        sprite.scale = scale
-        scale *= self._root.height / sprite.height
-        sprite.scale = scale
+        sprite.scale = self._root.max_content_width / sprite.width
+        # del self._root.content_height
+        sprite.scale *= self._root.max_content_height / sprite.height
+        # del self._root.content_width
 
         # Redundant width scaling. This allows the width to grow with wrap_content
-        scale *= min(self._root.width / sprite.width, 1)
+        sprite.scale *= min(self._root.max_content_width / sprite.width, 1)
 
-        return scale, 1, 1
+        return None, 1, 1
 
     def fill(self):
         """Scales the image to fill both width and height."""
         sprite = self._root._sprite
 
         # Calculate a scale that fits and never decreases the scale
-        scale = self._root.width / sprite.width
-        scale *= max(self._root.height / (sprite.height * scale), 1)
+        scale = self._root.max_content_width / sprite.width
+        scale *= max(self._root.max_content_height / (sprite.height * scale), 1)
         
         return scale, 1, 1
     
@@ -270,7 +425,7 @@ class ImageGroup(pyglet.graphics.Group):
         sprite = self._root._sprite
 
         # Calculate a fitting scale per axis
-        scale_x = self._root.width / sprite.width
-        scale_y = self._root.height / sprite.height
+        scale_x = self._root.max_content_width / sprite.width
+        scale_y = self._root.max_content_height / sprite.height
 
         return 1, scale_x, scale_y
