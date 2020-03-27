@@ -139,5 +139,6 @@ def get_delay(index=None):
     global recorded_delays, custom_delays
     if index == None:
         return time.perf_counter() - recorded_delays.pop()
-    else:
+    elif index in custom_delays:
         return time.perf_counter() - custom_delays.pop(index)
+    return 0
