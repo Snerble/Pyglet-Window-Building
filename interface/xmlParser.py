@@ -1,11 +1,11 @@
 import importlib
 import xml.etree.ElementTree as ET
 
-def parse(filepath: str):
+def parse(filepath: str, parent = None):
     tree = ET.parse(filepath)
     
     root = tree.getroot()
-    return getInstance(root)
+    return getInstance(root, parent)
 
 def getInstance(element: "Element", parent = None):
     tokens = element.tag.split('.')
