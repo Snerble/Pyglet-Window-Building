@@ -1,9 +1,4 @@
-import sys
-print(sys.executable)
-
-
 import config
-
 import os
 import tempfile
 
