@@ -14,6 +14,7 @@ class ScrollLayout(Component):
         self.__root_component.parent = self
 
         # Initialize members
+        self.__scroll_destination = 0
         self.__scroll_speed = 0
         self.__scrolls = list()
         self.__padding_right = 0
@@ -23,8 +24,9 @@ class ScrollLayout(Component):
         self.scroll_position = 0
         self.step_size = kwargs.get("step_size", 100)
         self.smooth_scroll = kwargs.get("smooth_scroll", True)
-        self.scroll_duration = kwargs.get("scroll_duration", 0.1)
-        self.stacking_factor = kwargs.get("stacking_factor", 4)
+        self.scroll_duration = kwargs.get("scroll_duration", 0.2)
+        self.stacking_factor = kwargs.get("stacking_factor", None)
+        self.scroll_rate = kwargs.get("scroll_rate", self.window.screen.get_mode().rate if self.window else 60)
 
         # Initialize cache
         self._max_component_width = None
@@ -39,7 +41,7 @@ class ScrollLayout(Component):
         if value < 0:
             self.__scrolls.clear()
             value = 0
-        max_value = max(0, self.content_height - self.max_content_height    )
+        max_value = max(0, self.content_height - self.max_content_height)
         if value > max_value:
             self.__scrolls.clear()
             value = max_value
@@ -61,7 +63,16 @@ class ScrollLayout(Component):
     def scroll_duration(self, value: (int, float, str)):
         if type(value) == str: value = float(value)
         assert type(value) in (int, float), f"Int or float expected, but {type(value).__name__} found."
-        self.__scroll_duration = value
+        self.__scroll_duration = value / 2 # Divided by 2 because the scroll duration is primarily used this way
+
+    @property
+    def scroll_rate(self) -> (int, float):
+        return round(1 / self.__scroll_rate, 10)
+    @scroll_rate.setter
+    def scroll_rate(self, value: (int, float, str)):
+        if type(value) == str: value = float(value)
+        assert type(value) in (int, float), f"Int or float expected, but {type(value).__name__} found."
+        self.__scroll_rate = 1 / value
 
     @property
     def smooth_scroll(self) -> bool:
@@ -81,7 +92,7 @@ class ScrollLayout(Component):
         """Specifies how many scrollwheel inputs need to be stacked before the
         scroll acceleration is multiplied by 2.
 
-       Passing None disables the stacking effect.
+       Passing None, 'None', 'null' or 0 disables the stacking effect.
 
         This requires smooth_scroll to be True."""
         # Handle special string values
@@ -124,80 +135,68 @@ class ScrollLayout(Component):
         if not self.contains(x, y): return
 
         distance = scroll_y * -self.step_size
-        if not self.smooth_scroll or abs(scroll_y) != 1: # TODO test if scroll_y is always one with a mouse
+        if not self.smooth_scroll or int(scroll_y) != scroll_y:
             self.scroll_position += distance
             return
 
         if len(self.__scrolls) == 0:
-            pyglet.clock.tick()
-            pyglet.clock.schedule_interval(self.update, 1/60)
+            pyglet.clock.schedule_interval(self.update, self.__scroll_rate)
         
         self.__scrolls.append([
-            self.scroll_duration*2, # Lifetime variable in seconds
-            self.scroll_duration*2, # Duration in seconds
-            distance / self.scroll_duration**2 # Acceleration in pixels/s^2
+            self.scroll_duration*2, # Lifetime in seconds
+            distance / self.scroll_duration ** 2 * (len(self.__scrolls) + 1) ** self.__scroll_stacking_factor, 10 # Acceleration in pixels/s^2
         ])
+        self.scroll_destination += distance
 
     def update(self, dt):
-        fps = 1/60 # TODO replace local with a more static value somewhere else
+        fps = min(dt, self.__scroll_rate)
         for scroll in self.__scrolls[:]:
-            # Clamp the fps multiplier to the remaining acceleration and deceleration time
-            if scroll[0] > scroll[1] / 2 and scroll[0] - scroll[1] / 2 < fps:
-                fps = scroll[0] - scroll[1] / 2
-            elif scroll[0] < fps:
-                fps = scroll[0]
+            mult = fps
+            if scroll[0] < fps:
+                mult = scroll[0]
+            # Handle case when the halfway point falls in between a single frame
+            elif round(scroll[0], 12) > self.scroll_duration and scroll[0] - self.scroll_duration < fps:
+                # Ratio of the amount if time spent accelerating vs decelerating
+                accel_ratio = (scroll[0] - self.scroll_duration) / fps
 
+                # Apply intermediate acceleration travel
+                self.scroll_position += scroll[1] * (accel_ratio ** 2) * (fps ** 2)
+                # Add the remaining acceleration
+                self.__scroll_speed += scroll[1] * (accel_ratio - 0.5) * 2 * fps
+                scroll[0] -= fps
+                continue
 
+            # Remove the scroll if it has expired
             scroll[0] -= fps
-            if scroll[0] <= 0:
+            if round(scroll[0], 12) <= 0:
+                self.__scroll_speed -= scroll[1] * mult
                 self.__scrolls.remove(scroll)
                 continue
-            
+
             # Increment in the first half, decrement in the other half
-            if scroll[0] >= scroll[1] / 2:
-                self.__scroll_speed += scroll[2] * fps * len(self.__scrolls)**self.__scroll_stacking_factor
+            if scroll[0] >= self.scroll_duration:
+                self.__scroll_speed += scroll[1] * mult
             else:
-                self.__scroll_speed -= scroll[2] * fps * len(self.__scrolls)**self.__scroll_stacking_factor
-        
+                self.__scroll_speed -= scroll[1] * mult
+
         # Reset and unschedule if no scroll elements remain
         if len(self.__scrolls) == 0:
             pyglet.clock.unschedule(self.update)
             self.__scroll_speed = 0
-            self.scrollcount = 0
+
+            # Set the precise scroll destination to remove any potential discrepancies
+            self.scroll_position = self.__scroll_destination
+            self.__scroll_destination = self.scroll_position
             return
 
         self.scroll_position += self.__scroll_speed * fps
 
-    def invalidate(self):
-        """Invalidates this component and forces it to redraw."""
-        self._invalidated = True
-
-        # Reset cache
-        self._scrollbar_padding = None
-
-        # Recalculate content size
-        for c in self.__root_component._children:
-            c.invalidate()
-
-        self._invalidated = False
-
-        # Update cache
-        self._scrollbar_padding = None
-        self.padding_right
-
-        # Update content size
-        for c in self.__root_component._children:
-            c.invalidate()
-
-        # Update remaining properties
-        self.scroll_position = self.scroll_position
-
     def draw(self):
         self._group.set_state()
 
-        offset = -self.scroll_position
+        offset = round(-self.scroll_position)
         for c in self.__root_component._children:
-            c.y = ceil(offset)
+            c.y = offset
             offset += ceil(c.height)
         self.__root_component.draw()
         
