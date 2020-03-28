@@ -5,6 +5,8 @@ from threading import Lock, Thread
 from urllib.parse import urlparse
 
 import pyglet
+from pyglet import gl
+import ctypes
 import requests
 
 import tools
@@ -39,6 +41,9 @@ class Image(Component):
         """
 
         # Initialize members
+        # self._component_graphics = None # TODO remove, the image's textures can simply be changed
+        self._component_graphics = pyglet.image.Texture.create(1, 1)
+
         self._sprite_invalidated = False
         self._sprite = None
         self.__image = None
@@ -56,8 +61,6 @@ class Image(Component):
 
         self.set_value_watcher(self, self.invalidate, "max_content_width")
         self.set_value_watcher(self, self.invalidate, "max_content_height")
-        # self.set_value_watcher(self, self.invalidate, "width")
-        # self.set_value_watcher(self, self.invalidate, "height")
 
     @Component.width.setter
     def width(self, value):
@@ -298,56 +301,43 @@ class Image(Component):
         if self._sprite_invalidated:
             if not self._sprite:
                 self._sprite_invalidated = False
-                print("Loading sprite for", os.path.basename(self.file_path) if self.file_path else "N/A")
-                
+
                 def getTexture(dt):
                     self._sprite = pyglet.sprite.Sprite(self.__image)
                     self.__spriteGroup.set_state()
                     self.invalidate()
-                    pyglet.clock.unschedule(getTexture)
+                    # pyglet.clock.unschedule(getTexture)
                 
-                pyglet.clock.schedule_interval_soft(getTexture, 0)
+                pyglet.clock.schedule_once(getTexture, 0)
             else:
                 self.__spriteGroup.set_state()
                 self._sprite_invalidated = False
+                del self._component_graphics
+                self._component_graphics = pyglet.image.Texture.create(int(self.max_content_width), int(self.max_content_height))
         
         if not self._sprite: return
 
-        self._group.set_state()
+        gl.glBindFramebuffer(pyglet.gl.GL_FRAMEBUFFER, 1)
+        gl.glFramebufferTexture2D(gl.GL_FRAMEBUFFER, gl.GL_COLOR_ATTACHMENT0, gl.GL_TEXTURE_2D, self._component_graphics.id, 0)
+        gl.glViewport(0, 0, round(self.max_content_width) + 1, round(self.max_content_height) + 1)
+        gl.glClear(gl.GL_COLOR_BUFFER_BIT)
 
-        pyglet.gl.glScalef(2, 1, 1)
-
-        a = (pyglet.gl.GLfloat * 16)()
-        pyglet.gl.glGetFloatv(pyglet.gl.GL_MODELVIEW_MATRIX, a)
-        b = list()
-        for i in range(0, 16, 4):
-            b.append(list(a[i:i+4]))
-
-        b = np.matrix(b)
-
-        coords = [5, 0, 0, 1]
-        v = np.dot(coords, b)
-        
-        inv = np.linalg.inv(b)
-        inv = np.transpose(inv)
-        # b = np.transpose(b)   
-        print(f"Coords:        {{x:{self.x},y:{self.y}}}")
-        
-        # coords = np.matrix([0, 0, 0, 0])
-        print(b)
-
-        print(*v)
-        print(f"Actual Coords: {{x:{v[0]},y:{v[1]}}}")
-
-        _quad = ('v2f', (0, 0,
-                         0 + self.max_content_width, 0,
-                         0 + self.max_content_width, 0 + self.max_content_height,
-                         0, 0 + self.max_content_height))
-
+        gl.glPushMatrix()
+        gl.glLoadIdentity()
+        gl.glOrtho(0, self.max_content_width / self.window.width * 2, 0, self.max_content_height / self.window.height * 2, -1, 1)
         self._sprite.draw()
-        # self._sprite.blit(0, 0, 0, self.width, self.height)
-        
-        # self.__spriteGroup.unset_state()
+        gl.glPopMatrix()
+
+        gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)
+        gl.glViewport(0, 0, self.window.width, self.window.height)
+
+        gl.glClear(0)
+            
+        self._group.set_state()
+        if False:
+            self._sprite.draw()
+        else:
+            self._component_graphics.blit(0,0)
         self._group.unset_state()
 
 class ImageGroup(pyglet.graphics.Group):

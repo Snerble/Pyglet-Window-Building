@@ -12,6 +12,8 @@ import asyncio
 import api
 
 def init(program: Program):
+    pyglet.gl.glGenFramebuffers(1, pyglet.gl.GLuint())
+
     TestEnv(program.window)
 
 class TestEnv(Component):
@@ -25,7 +27,7 @@ class TestEnv(Component):
 
         self.rootComponent: ScrollLayout = xmlParser.parse("interface/layouts/testEnv.xml", self)
         self.rootComponent.set_handlers()
-        self.rootComponent.padding = 20
+        # self.rootComponent.padding = 20
     
         def getfiles(path):
             items = list(os.path.join(path, _) for _ in os.listdir(path))
@@ -40,26 +42,11 @@ class TestEnv(Component):
 
             return files, dirs
 
-        path = r"C:\Users\conor\Google Drive\Wallpapers\Profile Pictures"
+        path = r"C:\Users\conor\Google Drive\Wallpapers"
         files, _ = getfiles(path)
         self.fps_display = pyglet.window.FPSDisplay(self.window)
 
         urls = [
-            "https://static1.e621.net/data/bb/de/bbde3ccafc9505a08d3674081052175e.png",
-            "https://static1.e621.net/data/55/8d/558dd9c7c8061892d9664d938b2c9183.png",
-            "https://static1.e621.net/data/f9/8a/f98ad0611a1bc240715af7b15be361e8.jpg",
-            "https://static1.e621.net/data/a3/93/a393c850a6b6923a0d412872e6de0a3f.png",
-            "https://static1.e621.net/data/80/c3/80c3b15254f727e44e665f9eb2f3d94c.png",
-            "https://static1.e621.net/data/ce/62/ce62df8d3f31101ad0ab060498df0d0b.jpg",
-            "https://static1.e621.net/data/fe/b5/feb5afca373a13e0c0121f4b0685dbe3.gif",
-            "https://static1.e621.net/data/8c/a4/8ca4ca200341f392d59f7761219db50d.jpg",
-            "https://static1.e621.net/data/e3/56/e3566c9dc69f658a5090ed6cd6e3ba10.jpg",
-            "https://static1.e621.net/data/22/69/22693d6bc2ec9e7da8369cfe5b7aa751.gif",
-            "https://static1.e621.net/data/86/61/866170f314ddad9b70f64107f62ae455.jpg",
-            "https://static1.e621.net/data/27/28/2728ed3322326ece2abb6073015d8c9a.jpg",
-            "https://static1.e621.net/data/50/82/5082fc5c744f3b75415907ec98a12b19.gif",
-            "https://static1.e621.net/data/1d/11/1d112ef3c29c8826f6e48ef8602d7d79.png",
-
         ]
 
 
@@ -78,19 +65,18 @@ class TestEnv(Component):
         else:
             j = 0
             for file in files:
-                j += 1
                 if j < 0: continue
-                if j >= 10: break
+                if j >= 100: break
                 image = Image(
                     parent=self.rootComponent,
                     # width="match_parent",
                     # height="match_parent",
-                    width="wrap_content",
-                    height="wrap_content",
+                    width="match_parent",
+                    height="match_parent",
                     # max_width="wrap_content",
                     # max_height="match_parent",
                     # padding_top=0 if j == 1 else 50,
-                    # fit_mode="stretch",
+                    fit_mode="fill",
                 )
                 self.rootComponent.add(image)
                 image.set_image(file)
@@ -98,6 +84,7 @@ class TestEnv(Component):
                 #     image.image = file
                 # else:
                 #     image.set_image(file)
+                j += 1
 
         # img = pyglet.image.load(files[0])
         # for i in range(15):
@@ -115,19 +102,56 @@ class TestEnv(Component):
         self.window.set_handler("on_draw", self.draw)
         self.window.set_handler("on_resize", self.on_resize)
         self.window.set_handler("on_key_press", self.on_key_press)
+        self.window.set_handler("on_close", self.on_close)
         self.window.event(self.on_mouse_press)
         
         pyglet.gl.glClearColor(1.2/100, 6.7/100, 19.2/100, 1)
 
     def on_key_press(self, key, modifiers):
         if key == pyglet.window.key.F11:
-            self.window.set_fullscreen(not self.window._fullscreen)
+            fullscreen = not self.window.fullscreen
+
+            target_screen = None
+            if fullscreen:
+                # Get the middle of the window to determine the most suitable screen
+                window_pos = self.window.get_location()
+                window_pos = (
+                    window_pos[0] + self.window.width / 2,
+                    window_pos[1] + self.window.height / 2
+                )
+
+                # Find the first screen that contains the window position
+                for screen in pyglet.canvas.get_display().get_screens():
+                    if (window_pos[0] >= screen.x and window_pos[0] < screen.x + screen.width and
+                        window_pos[1] >= screen.y and window_pos[1] < screen.x + screen.width):
+                        target_screen = screen
+                        break
+
+            self.window.set_fullscreen(fullscreen, screen=target_screen)
         elif key == pyglet.window.key.SPACE:
             self.imgMode = "wrap_content" if not self.imgMode == "wrap_content" else "match_parent"
             for c in self.rootComponent._ScrollLayout__root_component._children:
                 c.width = self.imgMode
-                c.height = self.imgMode
+                # c.height = self.imgMode
             self.draw()
+    
+    @pyglet.app.event_loop.event
+    def on_window_close(self, *args, **kwargs):
+        print(args)
+        print(kwargs)
+        print("on_window_close")
+    
+    @staticmethod
+    @pyglet.app.event_loop.event
+    def on_exit(*args, **kwargs):
+        print(args)
+        print(kwargs)
+        print("on_exit")
+    
+    def on_close(self, *args, **kwargs):
+        print(args)
+        print(kwargs)
+        print("on_close")
 
     def on_resize(self, width, height):
         self.width = width
@@ -135,6 +159,7 @@ class TestEnv(Component):
         self.draw()
 
     def draw(self, *args):
+        pyglet.gl.glClearColor(1.2/100, 6.7/100, 19.2/100, 1)
         self.window.clear()
         self._group.set_state()
 
