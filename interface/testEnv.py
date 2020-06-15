@@ -42,7 +42,7 @@ class TestEnv(Component):
 
             return files, dirs
 
-        path = r"C:\Users\conor\Google Drive\Wallpapers"
+        path = r"C:\Users\conor\Google Drive\Wallpapers\Profile Pictures"
         files, _ = getfiles(path)
         self.fps_display = pyglet.window.FPSDisplay(self.window)
 
@@ -103,9 +103,12 @@ class TestEnv(Component):
         self.window.set_handler("on_resize", self.on_resize)
         self.window.set_handler("on_key_press", self.on_key_press)
         self.window.set_handler("on_close", self.on_close)
-        self.window.event(self.on_mouse_press)
+        self.window.set_handler("on_deactivate", self.on_deactivate)
         
         pyglet.gl.glClearColor(1.2/100, 6.7/100, 19.2/100, 1)
+
+    def on_deactivate(*args):
+        print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 
     def on_key_press(self, key, modifiers):
         if key == pyglet.window.key.F11:
@@ -136,21 +139,15 @@ class TestEnv(Component):
             self.draw()
     
     @pyglet.app.event_loop.event
-    def on_window_close(self, *args, **kwargs):
-        print(args)
-        print(kwargs)
+    def on_window_close(self):
         print("on_window_close")
     
     @staticmethod
     @pyglet.app.event_loop.event
-    def on_exit(*args, **kwargs):
-        print(args)
-        print(kwargs)
+    def on_exit():
         print("on_exit")
     
-    def on_close(self, *args, **kwargs):
-        print(args)
-        print(kwargs)
+    def on_close(self):
         print("on_close")
 
     def on_resize(self, width, height):

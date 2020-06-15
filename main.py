@@ -46,6 +46,11 @@ if __name__ == "__main__":
             print('Removed', f)
         except: pass
     program = Program("E621 Browser")
+    
+    # Set fullscreen on last monitor
+    screen = pyglet.canvas.get_display().get_screens()[-1]
+    program.window.set_fullscreen(True, screen=screen)
+
     testEnv.init(program)
     # searchInterface.init(program)
     app.run()

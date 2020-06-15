@@ -12,8 +12,6 @@ import requests
 import tools
 from components import Component, Polygon, RelativeConstraint
 
-import numpy as np
-
 class Image(Component):
     # Lock to prevent errors during async image loading
     __image_lock: Lock = Lock()
@@ -69,7 +67,7 @@ class Image(Component):
             # Add watcher that clears the width if the content changes
             self.set_value_watcher(self, "width", "content_width")
         else:
-            # Add watcher that invalidates the image if the size changes
+            # Remove watcher that clears the width if the content changes
             self.remove_value_watcher(self, "width", "content_width")
 
         Component.width.fset(self, value)

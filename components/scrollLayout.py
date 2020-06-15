@@ -120,12 +120,15 @@ class ScrollLayout(Component):
     #     return Component.padding_right.fget(self) + (self._scrollbar_padding if self._scrollbar_padding else 0)
 
     def add(self, component: Component):
+        component.parent = self.__root_component
         self.__root_component.add(component)
     
     def insert(self, index: int, component: Component):
+        component.parent = self.__root_component
         self.__root_component._children.insert(index, component)
 
     def remove(self, component: Component):
+        component.parent = None
         self.__root_component._children.remove(component)
 
     def set_handlers(self):
@@ -135,6 +138,7 @@ class ScrollLayout(Component):
         if not self.contains(x, y): return
 
         distance = scroll_y * -self.step_size
+        self.__scroll_destination += distance
         if not self.smooth_scroll or int(scroll_y) != scroll_y:
             self.scroll_position += distance
             return
@@ -146,7 +150,6 @@ class ScrollLayout(Component):
             self.scroll_duration*2, # Lifetime in seconds
             distance / self.scroll_duration ** 2 * (len(self.__scrolls) + 1) ** self.__scroll_stacking_factor, 10 # Acceleration in pixels/s^2
         ])
-        self.scroll_destination += distance
 
     def update(self, dt):
         fps = min(dt, self.__scroll_rate)

@@ -1,5 +1,8 @@
 <?xml version="1.0"?>
-<components.scrollLayout.ScrollLayout>
+<components.scrollLayout.ScrollLayout
+    stacking_factor="0"
+    step_size="200"
+    scroll_duration="0.51">
     <!-- <components.image.Image
         width="match_parent"
         height="wrap_content"

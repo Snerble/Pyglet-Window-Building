@@ -31,6 +31,6 @@ def getInstance(element: "Element", parent = None):
 
     # populate component with nested elements
     for child in element:
-        component.add(getInstance(child, component))
+        component.add(getInstance(child))
     
     return component
