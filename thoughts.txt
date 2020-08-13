@@ -1,0 +1,29 @@
+develop a system that places particular lambda callbacks directly into the component.
+for example, object b is placed to the right side of object a, meaning that a.x and a.width are observed
+by b.x.
+
+advantages:
+- easy to implement given the current system, since the existing cacheables can simply be configured
+  to do the job.
+
+drawbacks:
+- once overwritten, b.x will no longer perform it's intended behaviour. object b must be re-introduced
+  into the layout to return the correct behavior.
+
+
+develop a system that keeps it's relational constraints in layout parameter objects.
+for example, object b is placed to the right side of object a, meaning that the layout parameters of a.x
+and a.width are observed by the layout parameters of b.x. whenever these observed values change, an
+on_update callback in b's layout parameter is invoked that sets b.x.
+
+advantages:
+- this system maintains is functionality since the values from the cacheables in the layout parameters
+  are simply copied to their corresponding object.
+
+drawbacks:
+- this is more complicated than the previous system, since it acts as a bridge between the constraints and
+  the actual values. Without a more convenient way to abstract this mechanism, it may not be suitable for
+  use.
+- this also adds yet another way to control components via a layout, making the this approach seem
+  redundant or inconvenient compared to simply setting component sizes and coordinates when the layout
+  updates.

@@ -44,8 +44,12 @@ class Event:
 		return self
 	
 	def __sub__(self, func: Union[Tuple['function', Any], 'function']) -> 'Event':
-		if func in self.__event_handlers:
-			self.__event_handlers.remove(func)
+		if isinstance(func, tuple):
+			assert len(func) > 0 and callable(func[0]), "The tuple must begin with a function."
+			func = (func[0], func[1:])
+		else:
+			func = (func, tuple())
+		self.__event_handlers.remove(func)
 		return self
 
 class EventCollection:
